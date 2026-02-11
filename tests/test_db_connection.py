@@ -1,53 +1,93 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from inspector.config import ConnectionConfig
-from inspector.db import connection as conn_module
-from inspector.db.connection import close_pool, create_pool, get_pool
+from inspector.db.connection import SessionProvider
+from tests.conftest import MockSessionProvider
 
 
-@pytest.fixture(autouse=True)
-def reset_pool() -> None:
-    conn_module._pool = None
-    yield
-    conn_module._pool = None
+class TestSessionProvider:
+    def test_get_engine_returns_none_when_not_initialized(self) -> None:
+        provider = SessionProvider()
+        assert provider.get_engine() is None
 
-
-class TestGetPool:
-    def test_returns_none_when_no_pool(self) -> None:
-        assert get_pool() is None
-
-
-class TestCreatePoolAndClosePool:
     @pytest.mark.asyncio
-    async def test_create_pool_sets_global_and_returns_pool(
+    async def test_create_engine_sets_and_returns_engine(
         self, connection_config: ConnectionConfig
     ) -> None:
-        mock_pool = AsyncMock()
-        with patch.object(conn_module, "asyncpg") as mock_asyncpg:
-            mock_asyncpg.create_pool = AsyncMock(return_value=mock_pool)
-            pool = await create_pool(connection_config)
-        assert pool is mock_pool
-        assert get_pool() is mock_pool
-        mock_asyncpg.create_pool.assert_awaited_once_with(
-            connection_config.url, min_size=1, max_size=4
-        )
+        mock_engine = AsyncMock()
+        mock_session_factory = MagicMock()
+        provider = SessionProvider()
+        with patch(
+            "inspector.db.connection.create_async_engine", return_value=mock_engine
+        ) as create_engine_mock:
+            with patch(
+                "inspector.db.connection.async_sessionmaker",
+                return_value=mock_session_factory,
+            ):
+                engine = await provider.create_engine(connection_config)
+        assert engine is mock_engine
+        assert provider.get_engine() is mock_engine
+        create_engine_mock.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_close_pool_clears_global(
+    async def test_close_engine_disposes_and_clears_engine(
         self, connection_config: ConnectionConfig
     ) -> None:
-        mock_pool = AsyncMock()
-        with patch.object(conn_module, "asyncpg") as mock_asyncpg:
-            mock_asyncpg.create_pool = AsyncMock(return_value=mock_pool)
-            await create_pool(connection_config)
-        assert get_pool() is mock_pool
-        await close_pool()
-        assert get_pool() is None
-        mock_pool.close.assert_awaited_once()
+        mock_engine = AsyncMock()
+        provider = SessionProvider()
+        with patch("inspector.db.connection.create_async_engine", return_value=mock_engine):
+            with patch("inspector.db.connection.async_sessionmaker"):
+                await provider.create_engine(connection_config)
+        assert provider.get_engine() is mock_engine
+        await provider.close_engine()
+        assert provider.get_engine() is None
+        mock_engine.dispose.assert_awaited_once()
 
     @pytest.mark.asyncio
-    async def test_close_pool_idempotent_when_no_pool(self) -> None:
-        await close_pool()
-        assert get_pool() is None
+    async def test_close_engine_idempotent(self) -> None:
+        provider = SessionProvider()
+        await provider.close_engine()
+        assert provider.get_engine() is None
+
+    @pytest.mark.asyncio
+    async def test_open_raises_when_engine_missing(self) -> None:
+        provider = SessionProvider()
+        with pytest.raises(RuntimeError, match="configuration is not set"):
+            async with provider.open():
+                pass
+
+    @pytest.mark.asyncio
+    async def test_open_lazily_creates_engine_with_config(
+        self, connection_config: ConnectionConfig
+    ) -> None:
+        mock_engine = MagicMock()
+        mock_session = AsyncMock()
+
+        class _SessionContext:
+            async def __aenter__(self):
+                return mock_session
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        session_factory = MagicMock(return_value=_SessionContext())
+        provider = SessionProvider(config=connection_config)
+        with patch(
+            "inspector.db.connection.create_async_engine", return_value=mock_engine
+        ):
+            with patch(
+                "inspector.db.connection.async_sessionmaker",
+                return_value=session_factory,
+            ):
+                async with provider.open() as session:
+                    assert session is mock_session
+
+    @pytest.mark.asyncio
+    async def test_open_yields_session(
+        self, mock_engine: MagicMock, mock_session: AsyncMock
+    ) -> None:
+        provider = MockSessionProvider(mock_engine, mock_session)
+        async with provider.open() as session:
+            assert session is mock_session

@@ -15,17 +15,17 @@ uv sync
 Connection via `DATABASE_URL` or `-c` / `--connection`:
 
 ```bash
-DATABASE_URL=postgres://user:pass@localhost:5432/mydb uv run pg-inspector
+DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/mydb uv run inspector
 ```
 
 ```bash
-uv run pg-inspector -c "postgres://user:pass@localhost:5432/mydb"
+uv run inspector -c "postgresql+asyncpg://user:pass@localhost:5432/mydb"
 ```
 
 Or as a module:
 
 ```bash
-uv run python -m inspector -c "postgres://..."
+uv run python -m inspector -c "postgresql+asyncpg://..."
 ```
 
 No credentials in the repo; use env or CLI only.
@@ -39,7 +39,7 @@ docker compose up -d postgres
 docker compose run --rm -it pg-inspector
 ```
 
-The compose `pg-inspector` service uses `DATABASE_URL=postgres://pguser:pgpass@postgres:5432/pgdb` by default. Override with `-e DATABASE_URL=...` or an `env_file` if needed.
+The compose `pg-inspector` service uses `DATABASE_URL=postgresql+asyncpg://pguser:pgpass@postgres:5432/pgdb` by default. Override with `-e DATABASE_URL=...` or an `env_file` if needed.
 
 Build the image:
 
@@ -53,7 +53,7 @@ If the database is only reachable inside the cluster, port-forward then connect 
 
 ```bash
 kubectl port-forward svc/postgres -n <namespace> 5432:5432
-DATABASE_URL=postgres://user:pass@127.0.0.1:5432/mydb uv run pg-inspector
+DATABASE_URL=postgresql+asyncpg://user:pass@127.0.0.1:5432/mydb uv run inspector
 ```
 
 No Kubernetes-specific logic in the app.

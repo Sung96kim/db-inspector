@@ -4,7 +4,7 @@ from textual.screen import Screen
 from textual.widgets import Footer, Static, Tree
 from textual.widgets.tree import TreeNode
 
-from inspector.db.metadata import list_schemas, list_tables
+from inspector.db.database import DatabaseProvider
 from inspector.tui.screens.query_runner import QueryRunnerScreen
 from inspector.tui.screens.table_view import TableViewScreen
 
@@ -14,6 +14,13 @@ class SchemaBrowserScreen(Screen[None]):
         ("q", "query", "Query"),
         ("escape", "back", "Back"),
     ]
+
+    def __init__(
+        self,
+        database_provider: DatabaseProvider,
+    ) -> None:
+        super().__init__()
+        self._database_provider = database_provider
 
     def compose(self) -> ComposeResult:
         tree = Tree("Schemas", id="schema-tree")
@@ -38,7 +45,7 @@ class SchemaBrowserScreen(Screen[None]):
 
     async def _load_schemas(self) -> None:
         tree = self.query_one("#schema-tree", Tree)
-        schemas = await list_schemas()
+        schemas = await self._database_provider.list_schemas()
         for s in schemas:
             tree.root.add(s.name, expand=False)
 
@@ -49,7 +56,7 @@ class SchemaBrowserScreen(Screen[None]):
             self.run_worker(self._load_tables(node, schema_name), exclusive=False)
 
     async def _load_tables(self, schema_node: TreeNode, schema_name: str) -> None:
-        tables = await list_tables(schema_name)
+        tables = await self._database_provider.list_tables(schema_name)
         for t in tables:
             schema_node.add_leaf(t.table_name)
 
@@ -63,10 +70,16 @@ class SchemaBrowserScreen(Screen[None]):
         ):
             schema_name = str(node.parent.label).strip()
             table_name = str(node.label).strip()
-            self.app.push_screen(TableViewScreen(schema_name, table_name))
+            self.app.push_screen(
+                TableViewScreen(
+                    schema_name=schema_name,
+                    table_name=table_name,
+                    database_provider=self._database_provider,
+                )
+            )
 
     def action_query(self) -> None:
-        self.app.push_screen(QueryRunnerScreen())
+        self.app.push_screen(QueryRunnerScreen(database_provider=self._database_provider))
 
     def action_back(self) -> None:
-        self.app.pop_screen()
+        self.app.exit()

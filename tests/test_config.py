@@ -8,13 +8,25 @@ class TestConnectionConfig:
     @pytest.mark.parametrize(
         "url",
         [
-            "postgres://localhost/db",
-            "postgres://user:pass@host:5432/mydb",
+            "postgresql+asyncpg://localhost/db",
+            "postgresql+asyncpg://user:pass@host:5432/mydb",
         ],
     )
     def test_valid_url(self, url: str) -> None:
         config = ConnectionConfig(url=url)
         assert config.url == url
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "postgres://localhost/db",
+            "postgresql://localhost/db",
+            "sqlite+aiosqlite:///tmp/test.db",
+        ],
+    )
+    def test_invalid_non_asyncpg_url_raises(self, url: str) -> None:
+        with pytest.raises(ValidationError):
+            ConnectionConfig(url=url)
 
     def test_missing_url_raises(self) -> None:
         with pytest.raises(ValidationError):
@@ -33,8 +45,8 @@ class TestPgInspectorSettings:
     @pytest.mark.parametrize(
         "url",
         [
-            "postgres://localhost/db",
-            "postgres://u:p@h:5432/d",
+            "postgresql+asyncpg://localhost/db",
+            "postgresql+asyncpg://u:p@h:5432/d",
         ],
     )
     def test_database_url_from_validation_alias(

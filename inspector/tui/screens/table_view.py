@@ -3,21 +3,24 @@ from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
-from inspector.db.metadata import list_columns
-from inspector.db.query import QueryRow, run_query
+from inspector.db.database import DatabaseProvider
 from inspector.tui.screens.query_runner import QueryRunnerScreen
+from inspector.tui.widgets.table_helpers import populate_data_table
 
 PAGE_SIZE = 100
 
 
-def _cell(val: object) -> str:
-    if val is None:
-        return ""
-    return str(val)
+def _quote_identifier(identifier: str) -> str:
+    escaped = identifier.replace('"', '""')
+    return f'"{escaped}"'
 
 
-def _add_row(table: DataTable, cols: list[str], row: QueryRow) -> None:
-    table.add_row(*[_cell(row.get(c)) for c in cols])
+def _format_status(offset: int, loaded_rows: int) -> str:
+    if loaded_rows == 0:
+        return f"Rows 0 (offset {offset}, limit {PAGE_SIZE})"
+    start = offset + 1
+    end = offset + loaded_rows
+    return f"Rows {start}-{end} (limit {PAGE_SIZE})"
 
 
 class TableViewScreen(Screen[None]):
@@ -28,12 +31,17 @@ class TableViewScreen(Screen[None]):
         ("escape", "back", "Back"),
     ]
 
-    def __init__(self, schema_name: str, table_name: str) -> None:
+    def __init__(
+        self,
+        schema_name: str,
+        table_name: str,
+        database_provider: DatabaseProvider,
+    ) -> None:
         super().__init__()
         self._schema_name = schema_name
         self._table_name = table_name
+        self._database_provider = database_provider
         self._offset = 0
-        self._columns: list[str] = []
         self._total_loaded = 0
 
     def compose(self) -> ComposeResult:
@@ -46,27 +54,20 @@ class TableViewScreen(Screen[None]):
         yield Footer()
 
     def on_mount(self) -> None:
-        self.run_worker(self._load_metadata_and_data(), exclusive=True)
+        self.run_worker(self._load_initial_view(), exclusive=True)
 
-    async def _load_metadata_and_data(self) -> None:
+    async def _load_initial_view(self) -> None:
         status = self.query_one("#table-status", Static)
         status.update("Loading...")
-        await list_columns(self._schema_name, self._table_name)
-        quoted_schema = f'"{self._schema_name}"'
-        quoted_table = f'"{self._table_name}"'
-        sql = f"SELECT * FROM {quoted_schema}.{quoted_table} LIMIT {PAGE_SIZE} OFFSET {self._offset}"
-        cols, rows = await run_query(sql)
-        self._columns = cols
-        self._total_loaded = len(rows)
-        table = self.query_one("#table-data", DataTable)
-        table.clear(columns=True)
-        if cols:
-            table.add_columns(*cols)
-            for row in rows:
-                _add_row(table, cols, row)
-        status.update(
-            f"Rows {self._offset + 1}-{self._offset + self._total_loaded} "
-            f"(limit {PAGE_SIZE})"
+        await self._database_provider.list_columns(self._schema_name, self._table_name)
+        await self._load_page()
+
+    def _build_page_query(self) -> str:
+        quoted_schema = _quote_identifier(self._schema_name)
+        quoted_table = _quote_identifier(self._table_name)
+        return (
+            f"SELECT * FROM {quoted_schema}.{quoted_table} "
+            f"LIMIT {PAGE_SIZE} OFFSET {self._offset}"
         )
 
     def action_next_page(self) -> None:
@@ -79,25 +80,16 @@ class TableViewScreen(Screen[None]):
             self.run_worker(self._load_page(), exclusive=True)
 
     async def _load_page(self) -> None:
-        quoted_schema = f'"{self._schema_name}"'
-        quoted_table = f'"{self._table_name}"'
-        sql = f"SELECT * FROM {quoted_schema}.{quoted_table} LIMIT {PAGE_SIZE} OFFSET {self._offset}"
-        cols, rows = await run_query(sql)
+        sql = self._build_page_query()
+        cols, rows = await self._database_provider.run_query(sql)
         self._total_loaded = len(rows)
         table = self.query_one("#table-data", DataTable)
-        table.clear(columns=True)
-        if cols:
-            table.add_columns(*cols)
-            for row in rows:
-                _add_row(table, cols, row)
+        populate_data_table(table, cols, rows)
         status = self.query_one("#table-status", Static)
-        status.update(
-            f"Rows {self._offset + 1}-{self._offset + self._total_loaded} "
-            f"(limit {PAGE_SIZE})"
-        )
+        status.update(_format_status(self._offset, self._total_loaded))
 
     def action_query(self) -> None:
-        self.app.push_screen(QueryRunnerScreen())
+        self.app.push_screen(QueryRunnerScreen(database_provider=self._database_provider))
 
     def action_back(self) -> None:
         self.app.pop_screen()

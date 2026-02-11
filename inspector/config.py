@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,3 +18,13 @@ class PgInspectorSettings(BaseSettings):
 
 class ConnectionConfig(BaseModel):
     url: str = Field(..., description="PostgreSQL connection URL")
+
+    @field_validator("url")
+    @classmethod
+    def validate_asyncpg_sqlalchemy_url(cls, value: str) -> str:
+        if not value.startswith("postgresql+asyncpg://"):
+            raise ValueError(
+                "Connection URL must use SQLAlchemy asyncpg format: "
+                "'postgresql+asyncpg://...'"
+            )
+        return value

@@ -1,24 +1,22 @@
-from inspector.db.connection import close_pool, create_pool
+from inspector.db.connection import (
+    SessionProvider,
+)
+from inspector.db.database import DatabaseProvider, QueryResult, QueryRow, run_query
 from inspector.db.metadata import (
     ColumnInfo,
+    MetadataProvider,
     SchemaInfo,
     TableInfo,
-    list_columns,
-    list_schemas,
-    list_tables,
 )
-from inspector.db.query import QueryResult, QueryRow, run_query
 
 __all__ = [
-    "close_pool",
     "ColumnInfo",
-    "create_pool",
-    "list_columns",
-    "list_schemas",
-    "list_tables",
+    "DatabaseProvider",
+    "MetadataProvider",
     "QueryResult",
     "QueryRow",
-    "run_query",
+    "SessionProvider",
     "SchemaInfo",
     "TableInfo",
+    "run_query",
 ]

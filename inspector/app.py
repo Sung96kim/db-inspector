@@ -2,7 +2,7 @@ from textual.app import App, ComposeResult
 from textual.containers import Container
 
 from inspector.config import ConnectionConfig
-from inspector.db.query import QueryRow
+from inspector.db.database import DatabaseProvider, QueryRow
 from inspector.tui.screens.schema_browser import SchemaBrowserScreen
 
 
@@ -36,9 +36,14 @@ class PgInspectorApp(App[None]):
     }
     """
 
-    def __init__(self, config: ConnectionConfig) -> None:
+    def __init__(
+        self,
+        config: ConnectionConfig,
+        database_provider: DatabaseProvider,
+    ) -> None:
         super().__init__()
         self._config = config
+        self._database_provider = database_provider
         self._current_schema: str | None = None
         self._current_table: str | None = None
         self._query_text: str = ""
@@ -50,7 +55,11 @@ class PgInspectorApp(App[None]):
         return self._config
 
     def on_mount(self) -> None:
-        self.push_screen(SchemaBrowserScreen())
+        self.push_screen(
+            SchemaBrowserScreen(
+                database_provider=self._database_provider,
+            )
+        )
 
     def compose(self) -> ComposeResult:
         yield Container()

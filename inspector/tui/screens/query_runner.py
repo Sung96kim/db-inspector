@@ -3,13 +3,8 @@ from textual.containers import Vertical
 from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static, TextArea
 
-from inspector.db.query import run_query
-
-
-def _cell(val: object) -> str:
-    if val is None:
-        return ""
-    return str(val)
+from inspector.db.database import DatabaseProvider
+from inspector.tui.widgets.table_helpers import populate_data_table
 
 
 class QueryRunnerScreen(Screen[None]):
@@ -17,6 +12,10 @@ class QueryRunnerScreen(Screen[None]):
         ("ctrl+enter", "run_query", "Run"),
         ("escape", "back", "Back"),
     ]
+
+    def __init__(self, database_provider: DatabaseProvider) -> None:
+        super().__init__()
+        self._database_provider = database_provider
 
     def compose(self) -> ComposeResult:
         yield Vertical(
@@ -43,13 +42,9 @@ class QueryRunnerScreen(Screen[None]):
         status = self.query_one("#query-status", Static)
         status.update("Running...")
         try:
-            columns, rows = await run_query(sql)
+            columns, rows = await self._database_provider.run_query(sql)
             table = self.query_one("#query-results", DataTable)
-            table.clear(columns=True)
-            if columns:
-                table.add_columns(*columns)
-                for row in rows:
-                    table.add_row(*[_cell(row.get(c)) for c in columns])
+            populate_data_table(table, columns, rows)
             status.update(f"Rows: {len(rows)}")
         except Exception as e:  # noqa: BLE001
             status.update(f"Error: {e!s}")
